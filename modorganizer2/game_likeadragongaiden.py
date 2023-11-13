@@ -14,7 +14,7 @@ class LikeADragonGaidenGame(BasicGame):
     __yakuza_exe_dir = os.path.join('runtime', 'media')
 
     Name = "Like a Dragon Gaiden: The Man Who Erased His Name Support Plugin"
-    Author = "Piro101"
+    Author = "SutandoTsukai181 & Piro101"
     Version = "1.0.0"
 
     GameName = "Like a Dragon Gaiden: The Man Who Erased His Name"
