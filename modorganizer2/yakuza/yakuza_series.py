@@ -29,7 +29,7 @@ def yakuza_check_rmm(plugin: BasicGame, win):
         )
 
         if reply == QMessageBox.Yes:
-            webbrowser.open('https://github.com/SutandoTsukai181/RyuModManager/releases/latest')
+            webbrowser.open('https://github.com/Fronkln/RyuModManager/releases/latest')
 
 
 def yakuza_import_mods(plugin: BasicGame, win):
