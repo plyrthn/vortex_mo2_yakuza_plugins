@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 
 import mobase
-from PyQt5.QtCore import QFileInfo
+from PyQt6.QtCore import QFileInfo
 
 from ..basic_game import BasicGame
 from .yakuza.yakuza_series import YakuzaGameModDataChecker, yakuza_check_rmm, yakuza_import_mods

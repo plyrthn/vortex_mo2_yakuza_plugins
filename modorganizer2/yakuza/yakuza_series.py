@@ -7,8 +7,8 @@ import webbrowser
 from typing import Optional
 
 import mobase
-from PyQt5.QtCore import qWarning
-from PyQt5.QtWidgets import QMessageBox
+from PyQt6.QtCore import qWarning
+from PyQt6.QtWidgets import QMessageBox
 
 from ...basic_game import BasicGame
 
