@@ -34,6 +34,10 @@ Check each plugin's **Installing** section on its own Nexus page. If Vortex says
 
 [Yakuza: Like a Dragon Support](https://www.nexusmods.com/site/mods/398)
 
+[Like a Dragon: Gaiden Support](https://www.nexusmods.com/site/mods/761)
+
+[Like a Dragon: Infinite Wealth Support](https://www.nexusmods.com/site/mods/760)
+
 ***
 
 # Usage 
