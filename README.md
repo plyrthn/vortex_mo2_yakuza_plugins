@@ -1,6 +1,6 @@
 # Yakuza Games Support Plugins
 Plugins for Yakuza game series to add support for [Vortex](https://www.nexusmods.com/about/vortex/) and [Mod Organizer](https://github.com/ModOrganizer2/modorganizer).
-Fork of [SutandoTsukai181's Plugins](https://github.com/SutandoTsukai181/vortex_mo2_yakuza_plugins) that add Gaiden support
+Fork of [SutandoTsukai181's Plugins](https://github.com/SutandoTsukai181/vortex_mo2_yakuza_plugins) that adds Gaiden and Infinite Wealth Support
 
 ***
 
