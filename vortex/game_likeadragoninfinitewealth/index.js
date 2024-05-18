@@ -6,7 +6,7 @@ const GAME_ID = 'likeadragoninfinitewealth';
 const STEAMAPP_ID = '2072450';
 
 const RMM_MODPAGE = 'https://github.com/SRMM-Studio/ShinRyuModManager/releases/latest';
-const RMM_EXE = 'RyuModManager.exe';
+const RMM_EXE = 'ShinRyuModManager.exe';
 const PARLESS_ASI = 'YakuzaParless.asi';
 const RMM_REL_PATH = path.join('runtime', 'media');
 const DATA_PATH = path.join('runtime', 'media', 'data');
@@ -14,14 +14,14 @@ const MODS_PATH = path.join('runtime', 'media', 'mods');
 const EXT_MODS_PATH = '_externalMods'
 const GAME_EXE = path.join('runtime', 'media', 'startup.exe');
 
-const MOD_TYPE_RMM = 'likeadragongaiden-rmm-modmanager-modtype';
+const MOD_TYPE_RMM = 'likeadragoninfinitewealth-rmm-modmanager-modtype';
 
 const {
     download, findModByFile, findDownloadIdByFile, resolveVersionByPattern,
     testRequirementVersion
 } = require('./downloader');
 
-const ARC_NAME = 'ShinRyuModManager4.1.4.zip';
+const ARC_NAME = 'ShinRyuModManager4.0.3.zip';
 
 const REQUIREMENTS = [
     {
@@ -94,7 +94,7 @@ function main(context) {
     });
 
     context.registerInstaller(
-        'likeadragongaiden-rmm-modmanager-installer',
+        'likeadragoninfinitewealth-rmm-modmanager-installer',
         20,
         testRMM,
         (files) => installRMM(context.api, files)
