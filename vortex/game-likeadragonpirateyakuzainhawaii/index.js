@@ -1,17 +1,15 @@
-//Import some assets from Vortex we'll need.
+// Import some assets from Vortex we'll need.
 const path = require('path');
-const {fs, log, selectors, util} = require('vortex-api');
+const { fs, log, selectors, util } = require('vortex-api');
 
 const GAME_ID = 'likeadragonpirateyakuzainhawaii';
 const STEAMAPP_ID = '3061810';
 
-const RMM_MODPAGE = 'https://github.com/SRMM-Studio/ShinRyuModManager/releases/latest';
 const RMM_EXE = 'ShinRyuModManager.exe';
 const PARLESS_ASI = 'YakuzaParless.asi';
 const RMM_REL_PATH = path.join('runtime', 'media');
-const DATA_PATH = path.join('runtime', 'media', 'data');
 const MODS_PATH = path.join('runtime', 'media', 'mods');
-const EXT_MODS_PATH = '_externalMods'
+const EXT_MODS_PATH = '_externalMods';
 const GAME_EXE = path.join('runtime', 'media', 'startup.exe');
 
 const MOD_TYPE_RMM = 'likeadragonpirateyakuzainhawaii-rmm-modmanager-modtype';
@@ -21,7 +19,7 @@ const {
     testRequirementVersion
 } = require('./downloader');
 
-const ARC_NAME = 'ShinRyuModManager4.5.1.zip';
+const ARC_NAME = 'ShinRyuModManager4.5.3.zip';
 
 const REQUIREMENTS = [
     {
@@ -39,7 +37,7 @@ const REQUIREMENTS = [
 
 const tools = [
     {
-        id: 'rmm',
+        id: 'rmm-run',
         name: 'Run Shin Ryu Mod Manager and launch the game',
         shortName: 'RMM',
         logo: 'SRMM.png',
@@ -56,7 +54,7 @@ const tools = [
         shell: true,
     },
     {
-        id: 'rmm',
+        id: 'rmm-only',
         name: 'Run Shin Ryu Mod Manager only',
         shortName: 'RMM',
         logo: 'SRMM.png',
@@ -113,14 +111,14 @@ function main(context) {
         (gameId) => GAME_ID === gameId,
         (game) => getRMMPath(context.api, game),
         testRMMPath,
-        {deploymentEssential: true, name: 'RMM'}
+        { deploymentEssential: true, name: 'RMM' }
     );
 
     context.once(() => {
         context.api.onAsync('check-mods-version', (gameId, mods, forced) => onCheckModVersion(context.api, gameId, mods, forced));
-    })
+    });
 
-    return true
+    return true;
 }
 
 async function onCheckModVersion(api, gameId, mods, forced) {
@@ -141,10 +139,11 @@ function findGame() {
 }
 
 function testRMMPath(instructions) {
-    // Pretty basic set up right now.
-    const filtered = instructions
-        .filter((inst) => (inst.type === 'copy')
-            && (path.basename(inst.source).toLowerCase() === RMM_EXE.toLowerCase()));
+    // Basic check: does the copy instructions include the RMM exe?
+    const filtered = instructions.filter((inst) =>
+        inst.type === 'copy' &&
+        path.basename(inst.source).toLowerCase() === RMM_EXE.toLowerCase()
+    );
 
     const supported = filtered.length > 0;
     return Promise.resolve(supported);
@@ -161,7 +160,6 @@ function getRMMPath(api, game) {
 async function prepareForModding(discovery, api) {
     const rmmInstalled = await checkForRMM(api);
     return rmmInstalled ? Promise.resolve() : download(api, REQUIREMENTS);
-    // return checkForRMM(api, path.join(discovery.path, 'runtime', 'media', RMM_EXE));
 }
 
 async function checkForRMM(api) {
@@ -172,12 +170,12 @@ async function checkForRMM(api) {
 function testRMM(files, gameId) {
     const rightGame = (gameId === GAME_ID);
     const rightFile = files.some(file => path.basename(file).toLowerCase() === RMM_EXE.toLowerCase());
-    return Promise.resolve({supported: (rightGame && rightFile), requiredFiles: [RMM_EXE]});
+    return Promise.resolve({ supported: (rightGame && rightFile), requiredFiles: [RMM_EXE] });
 }
 
 function installRMM(api, files) {
     const instructions = files.reduce((accum, file) => {
-        // Make sure we create instructions only for files.
+        // Only process actual files.
         if (path.extname(file) === '') {
             return accum;
         }
@@ -186,102 +184,90 @@ function installRMM(api, files) {
             type: 'copy',
             source: file,
             destination: path.join(RMM_REL_PATH, file),
-        }
+        };
         accum.push(instr);
         return accum;
     }, []);
-    return Promise.resolve({instructions});
+    return Promise.resolve({ instructions });
 }
 
 function testMod(files, gameId) {
-    // Leave the actual "testing" to installMod()
-    return Promise.resolve({supported: (gameId === GAME_ID), requiredFiles: []});
+    // Testing is handled in installMod.
+    return Promise.resolve({ supported: (gameId === GAME_ID), requiredFiles: [] });
 }
 
+/*
+  Updated installMod logic:
+    - Compute the common top-level folder (if any) and use that to process data files.
+    - Exclude ASI files from the data mod instructions.
+    - Additionally scan all files for any .asi extension (anywhere in the archive) and install them,
+      flattening their path (using the base filename) so that ASI files are always installed in the EXT_MODS_PATH.
+*/
 async function installMod(api, files) {
-    // Get the path to the game.
+    // Get the game path.
     const state = api.store.getState();
     const discovery = util.getSafe(state, ['settings', 'gameMode', 'discovered', GAME_ID], undefined);
-    if (!discovery?.path) return Promise.reject(new util.ProcessCanceled('The game could not be discovered.'));
-
-    const dataPath = path.join(discovery.path, DATA_PATH);
-
-    // Find the root of the folder containing the modded files
-    let rootPath = await findRootPath(files, dataPath);
-
-    if (rootPath === '')
-        return Promise.reject(new util.DataInvalid('Unrecognized or invalid mod. Manual installation is required.'));
-    else if (rootPath === '.')
-        rootPath = '';      // Fix root
-
-    const idx = rootPath.length;
-    let filtered = files.filter(file => (!file.endsWith(path.sep)) && (file.indexOf(rootPath) !== -1));
-
-    const unsupported = findUnsupportedFiles(filtered);
-
-    if (unsupported.length > 0) {
-        api.sendNotification({
-            id: 'yakuza-mod-unsupported-files',
-            type: 'info',
-            title: 'Mod may have unsupported files',
-            message: 'This mod contains files that cannot be loaded by RMM. These files will not be copied to the mod folder, and will require manual installation.',
-        });
-
-        filtered = filtered.filter(file => (!unsupported.includes(file)));
+    if (!discovery?.path) {
+        return Promise.reject(new util.ProcessCanceled('The game could not be discovered.'));
     }
 
-    // Check for other folders with modded files
-    const otherPath = await findRootPath(files.filter(file => (file.indexOf(rootPath) === -1)), dataPath);
+    // Determine the common top-level folder for data files (if any).
+    const commonFolder = getCommonFolder(files);
 
-    if (otherPath !== '') {
-        api.sendNotification({
-            id: 'yakuza-mod-multiple-files',
-            type: 'info',
-            title: 'Mod may have additional files',
-            message: 'This mod contains multiple folders with modded files. It may either have alternative options, or additional files that require manual installation.',
+    // Filter out directories; process only actual files.
+    const filtered = files.filter(file => !file.endsWith(path.sep));
+
+    // Data mod instructions for non-ASI files.
+    const dataInstructions = filtered
+        .filter(file => path.extname(file).toLowerCase() !== '.asi')
+        .map(file => {
+            let relativePath = file;
+            if (commonFolder && file.startsWith(commonFolder + path.sep)) {
+                relativePath = file.substring(commonFolder.length + 1);
+            }
+            return {
+                type: 'copy',
+                source: file,
+                destination: path.join(EXT_MODS_PATH, relativePath),
+            };
         });
-    }
 
-    return Promise.map(filtered, file => {
-        return Promise.resolve({
+    // ASI instructions: search the entire file list for .asi files and install them (flattened to base filename).
+    const asiInstructions = filtered
+        .filter(file => path.extname(file).toLowerCase() === '.asi')
+        .map(file => ({
             type: 'copy',
             source: file,
-            destination: path.join(EXT_MODS_PATH, file.substr(idx)),
-        });
-    }).then(instructions => Promise.resolve({instructions}));
+            destination: path.join(EXT_MODS_PATH, path.basename(file)),
+        }));
+
+    // Combine the instructions.
+    const instructions = dataInstructions.concat(asiInstructions);
+
+    return Promise.resolve({ instructions });
 }
 
-async function findRootPath(files, dataPath) {
-    // We expect this to stop very early, unless the mod is actually invalid
-    for (let i = 0; i < files.length; i++) {
-        let base = path.basename(files[i]);
+// Helper function to compute a common top-level folder from a list of file paths.
+// This is useful when the mod archive is packaged with a single folder.
+function getCommonFolder(files) {
+    if (!files || files.length === 0) return '';
+    // Normalize paths to use forward slashes for consistency.
+    const normalizedFiles = files.map(f => f.replace(/\\/g, '/'));
+    const segments = normalizedFiles.map(f => f.split('/'));
+    if (segments.length === 0) return '';
 
-        let found = false;
-
-        await fs.statAsync(path.join(dataPath, base)).then(() => {
-            found = true;
-        }).catch(() => {
-        });
-
-        if (!found) {
-            if (files[i].endsWith(path.sep)) {
-                await fs.statAsync(path.join(dataPath, base + '.par')).then(() => {
-                    found = true;
-                }).catch(() => {
-                });
-            }
+    let common = segments[0];
+    for (let i = 1; i < segments.length; i++) {
+        const seg = segments[i];
+        let j = 0;
+        while (j < common.length && j < seg.length && common[j] === seg[j]) {
+            j++;
         }
-
-        if (found) {
-            return Promise.resolve(path.dirname(files[i]));
-        }
+        common = common.slice(0, j);
+        if (common.length === 0) break;
     }
-
-    return Promise.resolve('');
-}
-
-function findUnsupportedFiles(files) {
-    return [];
+    // Only return a common folder if it spans more than just the root filename.
+    return common.length > 1 ? common.join(path.sep) : '';
 }
 
 module.exports = {
