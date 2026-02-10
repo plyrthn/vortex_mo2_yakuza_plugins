@@ -1,82 +1,224 @@
-//Import some assets from Vortex we'll need.
 const path = require('path');
-const { fs, log, util } = require('vortex-api');
+const https = require('https');
+const {actions, fs, log, selectors, util} = require('vortex-api');
 
 const GAME_ID = 'judgment';
 const STEAMAPP_ID = '2058180';
 
-const RMM_MODPAGE = 'https://github.com/SutandoTsukai181/RyuModManager/releases/latest';
-const RMM_EXE = 'RyuModManager.exe';
+const RMM_EXE = 'ShinRyuModManager.exe';
 const PARLESS_ASI = 'YakuzaParless.asi';
-const DATA_PATH = path.join('runtime', 'media', 'data');
+const RMM_REL_PATH = path.join('runtime', 'media');
 const MODS_PATH = path.join('runtime', 'media', 'mods');
-const EXT_MODS_PATH = '_externalMods'
+const EXT_MODS_PATH = '_externalMods';
 const GAME_EXE = path.join('runtime', 'media', 'Judgment.exe');
+
+const MOD_TYPE_RMM = 'judgment-rmm-modmanager-modtype';
+const SRMM_GITHUB_API = '/repos/SRMM-Studio/ShinRyuModManager/releases/latest';
+const SRMM_VERSION_PATTERN = /ShinRyuModManager(\d+\.\d+\.\d+)/i;
 
 const tools = [
     {
-      id: 'rmm',
-      name: 'Run Ryu Mod Manager and launch the game',
-      shortName: 'RMM',
-      logo: 'rmm.png',
-      executable: () => RMM_EXE,
-      requiredFiles: [
-        RMM_EXE,
-        PARLESS_ASI,
-      ],
-      parameters: [
-        '--run',
-        '--silent',
-      ],
-      relative: true,
-      shell: true,
-    },
-    {
-        id: 'rmm',
-        name: 'Run Ryu Mod Manager only',
+        id: 'rmm-run',
+        name: 'Run Shin Ryu Mod Manager and launch the game',
         shortName: 'RMM',
-        logo: 'rmm.png',
+        logo: 'SRMM.png',
         executable: () => RMM_EXE,
-        requiredFiles: [
-          RMM_EXE,
-          PARLESS_ASI,
-        ],
+        requiredFiles: [RMM_EXE, PARLESS_ASI],
+        parameters: ['--run', '--silent'],
         relative: true,
         shell: true,
-      },
+    },
+    {
+        id: 'rmm-only',
+        name: 'Run Shin Ryu Mod Manager only',
+        shortName: 'RMM',
+        logo: 'SRMM.png',
+        executable: () => RMM_EXE,
+        requiredFiles: [RMM_EXE, PARLESS_ASI],
+        relative: true,
+        shell: true,
+    },
 ];
 
 function main(context) {
-
     context.registerGame({
         id: GAME_ID,
         name: 'Judgment',
         mergeMods: true,
         queryPath: findGame,
-        supportedTools: tools,
         queryModPath: () => MODS_PATH,
         logo: 'gameart.jpg',
+        supportedTools: tools,
         executable: () => GAME_EXE,
-        requiredFiles: [
-            GAME_EXE,
-        ],
+        requiredFiles: [GAME_EXE],
         setup: (discovery) => prepareForModding(discovery, context.api),
-        environment: {
-            SteamAPPId: STEAMAPP_ID,
-        },
-        details: {
-            steamAppId: parseInt(STEAMAPP_ID),
-        },
+        environment: {SteamAPPId: STEAMAPP_ID},
+        details: {steamAppId: parseInt(STEAMAPP_ID)},
     });
-    
+
+    context.registerInstaller(
+        'judgment-rmm-modmanager-installer',
+        20,
+        testRMM,
+        (files) => installRMM(context.api, files)
+    );
+
     context.registerInstaller(
         'judgment-mod-installer',
         25,
         testMod,
         (files) => installMod(context.api, files)
     );
-    
-    return true
+
+    context.registerModType(
+        MOD_TYPE_RMM,
+        10,
+        (gameId) => GAME_ID === gameId,
+        (game) => getRMMPath(context.api, game),
+        testRMMPath,
+        {deploymentEssential: true, name: 'RMM'}
+    );
+
+    context.once(() => {
+        context.api.onAsync('check-mods-version', (gameId, mods, forced) => onCheckModVersion(context.api, gameId, mods, forced));
+    });
+
+    return true;
+}
+
+function versionGt(a, b) {
+    const pa = (a || '0.0.0').split('.').map(Number);
+    const pb = (b || '0.0.0').split('.').map(Number);
+    for (let i = 0; i < 3; i++) {
+        if (pa[i] > pb[i]) return true;
+        if (pa[i] < pb[i]) return false;
+    }
+    return false;
+}
+
+function githubGet(apiPath) {
+    return new Promise((resolve, reject) => {
+        function fetch(url, isRedirect) {
+            const mod = isRedirect ? require('https') : https;
+            mod.get(url.startsWith('http') ? url : {
+                hostname: 'api.github.com',
+                path: url,
+                headers: {'User-Agent': 'vortex-judgment'},
+            }, (res) => {
+                if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+                    return fetch(res.headers.location, true);
+                }
+                let body = '';
+                res.on('data', c => body += c);
+                res.on('end', () => {
+                    try { resolve(JSON.parse(body)); } catch (e) { reject(e); }
+                });
+            }).on('error', reject);
+        }
+        fetch(apiPath, false);
+    });
+}
+
+function getSRMMAsset(release) {
+    return (release.assets || []).find(a => SRMM_VERSION_PATTERN.test(a.name));
+}
+
+function downloadFile(url, dest) {
+    return new Promise((resolve, reject) => {
+        function fetch(u) {
+            https.get(u, {headers: {'User-Agent': 'vortex-judgment'}}, (res) => {
+                if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+                    return fetch(res.headers.location);
+                }
+                const nativeFs = require('fs');
+                const out = nativeFs.createWriteStream(dest);
+                res.pipe(out);
+                out.on('finish', () => out.close(resolve));
+                out.on('error', reject);
+            }).on('error', reject);
+        }
+        fetch(url);
+    });
+}
+
+function importAndInstall(api, filePath) {
+    return new Promise((resolve, reject) => {
+        api.events.emit('import-downloads', [filePath], (dlIds) => {
+            const dlId = dlIds[0];
+            if (!dlId) return reject(new Error(`import failed: ${filePath}`));
+            util.batchDispatch(api.store, [
+                actions.setDownloadModInfo(dlId, 'source', 'other'),
+                actions.setDownloadModInfo(dlId, 'game', [GAME_ID]),
+            ]);
+            api.events.emit('start-install-download', dlId, true, (err, modId) => {
+                if (err) return reject(err);
+                const profileId = selectors.lastActiveProfileForGame(api.getState(), GAME_ID);
+                util.batchDispatch(api.store, [
+                    actions.setModEnabled(profileId, modId, true),
+                    actions.setModAttributes(GAME_ID, modId, {
+                        customFileName: 'Shin Ryu Mod Manager',
+                        description: 'Modding requirement for Judgment - keep enabled.',
+                    }),
+                ]);
+                resolve(modId);
+            });
+        });
+    });
+}
+
+async function downloadSRMM(api) {
+    api.sendNotification({
+        id: 'judgment-srmm-install',
+        type: 'activity',
+        message: 'Downloading Shin Ryu Mod Manager...',
+        noDismiss: true,
+        allowSuppress: false,
+    });
+    try {
+        const release = await githubGet(SRMM_GITHUB_API);
+        const asset = getSRMMAsset(release);
+        if (!asset) throw new Error('SRMM zip not found in latest release');
+        const tempPath = path.join(util.getVortexPath('temp'), asset.name);
+        await downloadFile(asset.browser_download_url, tempPath);
+        await importAndInstall(api, tempPath);
+    } catch (err) {
+        api.showErrorNotification('Failed to download Shin Ryu Mod Manager', err, {allowReport: false});
+    } finally {
+        api.dismissNotification('judgment-srmm-install');
+    }
+}
+
+function getInstalledVersion(api) {
+    const downloads = util.getSafe(api.getState(), ['persistent', 'downloads', 'files'], {});
+    return Object.values(downloads).reduce((best, dl) => {
+        const m = SRMM_VERSION_PATTERN.exec(path.basename(dl.localPath || ''));
+        return (m && versionGt(m[1], best)) ? m[1] : best;
+    }, '0.0.0');
+}
+
+async function onCheckModVersion(api, gameId, mods, forced) {
+    const profile = selectors.activeProfile(api.getState());
+    if (profile?.gameId !== gameId) return;
+    try {
+        const current = getInstalledVersion(api);
+        const release = await githubGet(SRMM_GITHUB_API);
+        const asset = getSRMMAsset(release);
+        if (!asset) return;
+        const m = SRMM_VERSION_PATTERN.exec(asset.name);
+        const latest = m?.[1];
+        if (!latest || !versionGt(latest, current)) return;
+        api.sendNotification({
+            id: 'srmm-update',
+            type: 'warning',
+            message: `Shin Ryu Mod Manager v${latest} available`,
+            allowSuppress: true,
+            actions: [
+                {title: 'Download', action: (dismiss) => { downloadSRMM(api); dismiss(); }},
+            ],
+        });
+    } catch (err) {
+        log('warn', 'failed to check SRMM version', err);
+    }
 }
 
 function findGame() {
@@ -84,116 +226,91 @@ function findGame() {
         .then(game => game.gamePath);
 }
 
-function prepareForModding(discovery, api) {
-    return checkForRMM(api, path.join(discovery.path, 'runtime', 'media', RMM_EXE));
+async function prepareForModding(discovery, api) {
+    const installed = await checkForRMM(api);
+    if (!installed) {
+        return downloadSRMM(api);
+    }
 }
 
-function checkForRMM(api, qModPath) {
-    return fs.statAsync(qModPath)
-      .catch(() => {
-        api.sendNotification({
-          id: 'rmm-missing',
-          type: 'warning',
-          title: 'RyuModManager not installed',
-          message: 'You need to install RMM and run it at least once before modding the game.',
-          actions: [
-            {
-              title: 'Get RMM',
-              action: () => util.opn(RMM_MODPAGE).catch(() => undefined),
-            }
-          ]
-        });
-      });
+async function checkForRMM(api) {
+    const discovery = util.getSafe(api.getState(), ['settings', 'gameMode', 'discovered', GAME_ID], undefined);
+    if (!discovery?.path) return false;
+    try {
+        await fs.statAsync(path.join(discovery.path, RMM_REL_PATH, RMM_EXE));
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+function testRMMPath(instructions) {
+    const supported = instructions.some(inst =>
+        inst.type === 'copy' &&
+        path.basename(inst.source).toLowerCase() === RMM_EXE.toLowerCase()
+    );
+    return Promise.resolve(supported);
+}
+
+function getRMMPath(api, game) {
+    const discovery = selectors.discoveryByGame(api.getState(), game.id);
+    return discovery?.path || '.';
+}
+
+function testRMM(files, gameId) {
+    const rightGame = gameId === GAME_ID;
+    const rightFile = files.some(f => path.basename(f).toLowerCase() === RMM_EXE.toLowerCase());
+    return Promise.resolve({supported: rightGame && rightFile, requiredFiles: [RMM_EXE]});
+}
+
+function installRMM(api, files) {
+    const instructions = files.reduce((acc, file) => {
+        if (path.extname(file) === '') return acc;
+        acc.push({type: 'copy', source: file, destination: path.join(RMM_REL_PATH, file)});
+        return acc;
+    }, []);
+    return Promise.resolve({instructions});
 }
 
 function testMod(files, gameId) {
-    // Leave the actual "testing" to installMod()
-    return Promise.resolve({ supported: (gameId === GAME_ID), requiredFiles: [] });
+    return Promise.resolve({supported: gameId === GAME_ID, requiredFiles: []});
 }
 
 async function installMod(api, files) {
-    // Get the path to the game.
-    const state = api.store.getState();
-    const discovery = util.getSafe(state, ['settings', 'gameMode', 'discovered', GAME_ID], undefined);
-    if (!discovery?.path) return Promise.reject(new util.ProcessCanceled('The game could not be discovered.'));
+    const discovery = util.getSafe(api.getState(), ['settings', 'gameMode', 'discovered', GAME_ID], undefined);
+    if (!discovery?.path) return Promise.reject(new util.ProcessCanceled('Game not found.'));
 
-    const dataPath = path.join(discovery.path, DATA_PATH);
+    const commonFolder = getCommonFolder(files);
+    const filtered = files.filter(f => !f.endsWith(path.sep));
 
-    // Find the root of the folder containing the modded files
-    let rootPath = await findRootPath(files, dataPath);
-
-    if (rootPath === '')
-        return Promise.reject(new util.DataInvalid('Unrecognized or invalid mod. Manual installation is required.'));
-    else if (rootPath === '.')
-        rootPath = '';      // Fix root
-
-    const idx = rootPath.length;
-    let filtered = files.filter(file => (!file.endsWith(path.sep)) && (file.indexOf(rootPath) !== -1));
-
-    const unsupported = findUnsupportedFiles(filtered);
-
-    if (unsupported.length > 0) {
-        api.sendNotification({
-            id: 'yakuza-mod-unsupported-files',
-            type: 'info',
-            title: 'Mod may have unsupported files',
-            message: 'This mod contains files that cannot be loaded by RMM. These files will not be copied to the mod folder, and will require manual installation.',
-        });
-
-        filtered = filtered.filter(file => (!unsupported.includes(file)));
-    }
-
-    // Check for other folders with modded files
-    const otherPath = await findRootPath(files.filter(file => (file.indexOf(rootPath) === -1)), dataPath);
-
-    if (otherPath !== '') {
-        api.sendNotification({
-            id: 'yakuza-mod-multiple-files',
-            type: 'info',
-            title: 'Mod may have additional files',
-            message: 'This mod contains multiple folders with modded files. It may either have alternative options, or additional files that require manual installation.',
-        });
-    }
-    
-    return Promise.map(filtered, file => {
-        return Promise.resolve({
-            type: 'copy',
-            source: file,
-            destination: path.join(EXT_MODS_PATH, file.substr(idx)),
-        });
-    }).then(instructions => Promise.resolve({ instructions }));
-}
-
-async function findRootPath(files, dataPath) {
-    // We expect this to stop very early, unless the mod is actually invalid
-    for (let i = 0; i < files.length; i++)
-    {
-        let base = path.basename(files[i]);
-
-        let found = false;
-
-        await fs.statAsync(path.join(dataPath, base)).then(() => { found = true; }).catch(() => {});
-
-        if (!found)
-        {
-            if (files[i].endsWith(path.sep)) {
-                await fs.statAsync(path.join(dataPath, base + '.par')).then(() => { found = true; }).catch(() => { });
+    const dataInstructions = filtered
+        .filter(f => path.extname(f).toLowerCase() !== '.asi')
+        .map(f => {
+            let rel = f;
+            if (commonFolder && f.startsWith(commonFolder + path.sep)) {
+                rel = f.substring(commonFolder.length + 1);
             }
-        }
+            return {type: 'copy', source: f, destination: path.join(EXT_MODS_PATH, rel)};
+        });
 
-        if (found)
-        {
-            return Promise.resolve(path.dirname(files[i]));
-        }
+    const asiInstructions = filtered
+        .filter(f => path.extname(f).toLowerCase() === '.asi')
+        .map(f => ({type: 'copy', source: f, destination: path.join(EXT_MODS_PATH, path.basename(f))}));
+
+    return Promise.resolve({instructions: dataInstructions.concat(asiInstructions)});
+}
+
+function getCommonFolder(files) {
+    if (!files?.length) return '';
+    const segs = files.map(f => f.replace(/\\/g, '/').split('/'));
+    let common = segs[0];
+    for (let i = 1; i < segs.length; i++) {
+        let j = 0;
+        while (j < common.length && j < segs[i].length && common[j] === segs[i][j]) j++;
+        common = common.slice(0, j);
+        if (!common.length) break;
     }
-
-    return Promise.resolve('');
+    return common.length > 1 ? common.join(path.sep) : '';
 }
 
-function findUnsupportedFiles(files) {
-    return [];
-}
-
-module.exports = {
-    default: main,
-};
+module.exports = {default: main};
