@@ -62,6 +62,7 @@ class LostJudgmentGame(BasicGame):
         'chara2.par',
         'cubemap_coyote',
         'cubemap_coyote.par',
+        'de_mod.ini',
         'db.coyote.de',
         'db.coyote.de.par',
         'db.coyote.en',

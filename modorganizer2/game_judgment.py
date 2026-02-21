@@ -59,6 +59,7 @@ class JudgmentGame(BasicGame):
         'cmm.par',
         'cubemap_judge',
         'cubemap_judge.par',
+        'de_mod.ini',
         'db.judge.de',
         'db.judge.de.par',
         'db.judge.en',

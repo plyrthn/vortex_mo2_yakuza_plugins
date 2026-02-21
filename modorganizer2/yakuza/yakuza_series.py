@@ -143,10 +143,13 @@ class YakuzaGameModDataChecker(mobase.ModDataChecker):
 
     _validPaths: set
 
+    def _name_valid(self, name: str) -> bool:
+        return name in self._validPaths or name.endswith('.dll')
+
     def walk_tree(self, filetree: mobase.IFileTree) -> mobase.ModDataChecker.CheckReturn:
         name = filetree.name().casefold()
 
-        if name in self._validPaths:
+        if self._name_valid(name):
             return mobase.ModDataChecker.FIXABLE
 
         if filetree.isDir():
@@ -159,7 +162,7 @@ class YakuzaGameModDataChecker(mobase.ModDataChecker):
     def dataLooksValid(self, filetree: mobase.IFileTree) -> mobase.ModDataChecker.CheckReturn:
         # Check for mods that were already installed
         for entry in filetree:
-            if entry.name().casefold() in self._validPaths:
+            if self._name_valid(entry.name().casefold()):
                 return mobase.ModDataChecker.VALID
 
         return self.walk_tree(filetree)

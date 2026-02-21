@@ -58,6 +58,7 @@ class LikeADragonInfiniteWealthGame(BasicGame):
     'chara2.par',
     'cubemap2_elvis.par',
     'cubemap_elvis.par',
+    'de_mod.ini',
     'db.elvis.de.par',
     'db.elvis.en.par',
     'db.elvis.es.par',

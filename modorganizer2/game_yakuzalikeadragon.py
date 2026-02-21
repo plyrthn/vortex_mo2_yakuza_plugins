@@ -105,6 +105,8 @@ class Yakuza6Game(BasicGame):
         'particle.par',
         'patch',
         'ps5',
+        'de_mod.ini',
+        'puid.elvis',
         'puid.yazawa',
         'reflection',
         'shader',
