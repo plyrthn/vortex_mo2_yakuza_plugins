@@ -204,7 +204,7 @@ function getCommonFolder(files) {
         common = common.slice(0, j);
         if (!common.length) break;
     }
-    return common.length > 1 ? common.join(path.sep) : '';
+    return common.length >= 1 ? common.join(path.sep) : '';
 }
 
 // rmmRelPath: subdirectory where ShinRyuModManager.exe lives, relative to game root
