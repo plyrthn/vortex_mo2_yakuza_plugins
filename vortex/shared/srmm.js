@@ -310,4 +310,4 @@ function register(context, {gameId, steamAppId, gameName, exeName, rmmRelPath = 
     return true;
 }
 
-module.exports = {register};
+module.exports = {register, githubGet, downloadFile, importAndInstall};
